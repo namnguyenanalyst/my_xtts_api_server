@@ -1,0 +1,22 @@
+# Đánh giá Tổng quan Repository XTTS API Server
+
+## 🌟 Điểm mạnh (Strengths)
+1. **Kiến trúc API hiện đại & Nhẹ:** Sử dụng FastAPI, tốc độ phản hồi cực nhanh, hỗ trợ xử lý bất đồng bộ (async), và tự động sinh ra trang tài liệu `/docs` rất tiện lợi.
+2. **Cơ chế Caching thông minh:** Tính năng `USE_CACHE` giúp trả về file cũ ngay lập tức nếu chung nội dung và giọng đọc, tiết kiệm rất nhiều tài nguyên.
+3. **Quản lý VRAM/CPU tốt:** Hỗ trợ cờ `--lowvram` giúp luân chuyển model giữa RAM và VRAM, hữu ích cho máy cấu hình yếu.
+4. **Hỗ trợ Streaming & DeepSpeed:** Khả năng trả về âm thanh dạng luồng (Streaming) và tăng tốc bằng DeepSpeed, phù hợp làm ứng dụng Chatbot Voice thời gian thực.
+5. **Cơ chế Hàng đợi (Đã bổ sung):** Sử dụng `asyncio.Semaphore(1)` kết hợp `run_in_threadpool` giúp bảo vệ Server khỏi lỗi quá tải CPU/VRAM khi có nhiều request cùng lúc. Hỗ trợ hàng chờ tối đa 10 request.
+6. **Tiền xử lý Audio (Đã bổ sung):** Tích hợp bộ lọc EQ (Treble Biquad) khử âm đục, cùng với `librosa` tự động chuẩn hóa âm lượng và cắt bỏ khoảng lặng thừa của file upload, mang lại giọng đọc sáng và sắc nét hơn.
+7. **Dọn rác tự động - Garbage Collection (Đã bổ sung):** Có vòng lặp ngầm `asyncio` thức dậy mỗi 24 giờ tự động dọn dẹp thư mục `output/` (xóa file cũ hơn 7 ngày) và `speakers/` (xóa file temp cũ hơn 1 ngày), ngăn chặn kiệt quệ ổ cứng triệt để.
+8. **Cơ chế Tracking Tiến trình (SSE) (Đã bổ sung):** Tích hợp API `POST /tts_with_progress`, băm nhỏ văn bản thành từng câu, render và đẩy `%` tiến trình realtime về Backend/Frontend theo chuẩn Server-Sent Events. Tối ưu trải nghiệm UI/UX.
+9. **Chuẩn hóa Văn bản Tiếng Việt (Đã bổ sung):** Đã tích hợp bộ `vi_normalizer` tự động đọc số, ngày tháng, từ viết tắt tiếng Việt thành chữ viết đầy đủ trước khi đọc, giúp AI phát âm chuẩn xác.
+10. **Tối ưu Cache Đặc trưng Giọng nói (Latents):** Khắc phục triệt để lỗi trùng lặp/ghi đè giọng (cache collision) trong API `/tts_with_progress`, đảm bảo mỗi request đều sử dụng đúng đặc trưng giọng (latents) được upload.
+
+## ⚠️ Điểm yếu & Hướng phát triển tiếp theo (Weaknesses & Future Work)
+1. **Thiếu cơ chế Bảo mật (Security):**
+   - API hiện đang mở tự do (`CORS allow_origins=["*"]`) và không yêu cầu xác thực API Key, dẫn đến rủi ro bị khai thác kiệt quệ tài nguyên máy chủ.
+   - 👉 **Hướng phát triển:** Bổ sung cơ chế xác thực Middleware bằng Token hoặc API Key vào FastAPI Header.
+
+
+
+

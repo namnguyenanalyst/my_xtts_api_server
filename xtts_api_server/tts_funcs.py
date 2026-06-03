@@ -21,6 +21,8 @@ import socket
 import io
 import wave
 import numpy as np
+import librosa
+import soundfile as sf
 
 # Class to check tts settings
 class InvalidSettingsError(Exception):
@@ -44,16 +46,17 @@ supported_languages = {
     "ja":"Japanese",
     "ko":"Korean",
     "hu":"Hungarian",
-    "hi":"Hindi"
+    "hi":"Hindi",
+    "vi":"Vietnamese"
 }
 
 default_tts_settings = {
-    "temperature" : 0.75,
+    "temperature" : 0.8,  # Tăng lên 0.8 để có ngữ điệu tự nhiên, bớt đều đều
     "length_penalty" : 1.0,
-    "repetition_penalty": 5.0,
+    "repetition_penalty": 2.0,  # Giảm từ 5.0 xuống 2.0 để tránh lỗi nuốt chữ/bỏ chữ trong tiếng Việt
     "top_k" : 50,
     "top_p" : 0.85,
-    "speed" : 1,
+    "speed" : 1.2,  # Trả về 1.2 chuẩn để không bị vội/cụt chữ
     "enable_text_splitting": True
 }
 
@@ -63,7 +66,7 @@ official_model_list_v2 = ["2.0.0","2.0.1","2.0.2","2.0.3"]
 reversed_supported_languages = {name: code for code, name in supported_languages.items()}
 
 class TTSWrapper:
-    def __init__(self,output_folder = "./output", speaker_folder="./speakers",model_folder="./xtts_folder",lowvram = False,model_source = "local",model_version = "2.0.2",device = "cuda",deepspeed = False,enable_cache_results = True):
+    def __init__(self,output_folder = "./output", speaker_folder="./speakers",model_folder="xtts_models",lowvram = False,model_source = "local",model_version = "XTTS-v2-vietnamse",device = "cuda",deepspeed = False,enable_cache_results = True):
 
         self.cuda = device # If the user has chosen what to use, we rewrite the value to the value we want to use
         self.device = 'cpu' if lowvram else (self.cuda if torch.cuda.is_available() else "cpu")
@@ -254,6 +257,31 @@ class TTSWrapper:
                 torch.cuda.empty_cache()
 
     # SPEAKER FUNCS
+    def preprocess_speaker_audio(self, input_path, output_path=None):
+        """Trims silence and normalizes audio volume using librosa"""
+        if output_path is None:
+            output_path = input_path
+        
+        try:
+            # Load audio (downsample/upsample to 24000Hz, mono)
+            y, sr = librosa.load(input_path, sr=24000, mono=True)
+            
+            # Trim silence (top_db=30 means anything 30dB below peak is considered silence)
+            yt, _ = librosa.effects.trim(y, top_db=30)
+            
+            # Normalize volume to 0.95 peak
+            peak = np.abs(yt).max()
+            if peak > 0:
+                yt = (yt / peak) * 0.95
+                
+            # Write back to file as WAV
+            sf.write(output_path, yt, sr)
+            logger.info(f"Successfully preprocessed and normalized speaker audio: {output_path}")
+            return output_path
+        except Exception as e:
+            logger.error(f"Failed to preprocess audio {input_path}: {e}")
+            return input_path
+
     def get_or_create_latents(self, speaker_name, speaker_wav):
         if speaker_name not in self.latents_cache:
             logger.info(f"creating latents for {speaker_name}: {speaker_wav}")
@@ -351,8 +379,9 @@ class TTSWrapper:
 
     # GET FUNCS
     def get_wav_files(self, directory):
-        """ Finds all the wav files in a directory. """
-        wav_files = [f for f in os.listdir(directory) if f.endswith('.wav')]
+        """ Finds all the supported audio files in a directory. """
+        valid_extensions = ('.wav', '.mp3', '.flac', '.ogg', '.m4a')
+        wav_files = [f for f in os.listdir(directory) if f.lower().endswith(valid_extensions)]
         return wav_files
 
     def _get_speakers(self):
@@ -381,7 +410,7 @@ class TTSWrapper:
                         'preview': preview
                         })
 
-            elif f.endswith('.wav'):
+            elif f.lower().endswith(('.wav', '.mp3', '.flac', '.ogg', '.m4a')):
                 speaker_name = os.path.splitext(f)[0]
                 speaker_wav = full_path 
                 preview = f
@@ -442,11 +471,25 @@ class TTSWrapper:
         return reversed_supported_languages
 
     # GENERATION FUNCS
-    def clean_text(self,text):
-        # Remove asterisks and line breaks
-        text = re.sub(r'[\*\r\n]', '', text)
-        # Replace double quotes with single quotes and correct punctuation around quotes
+    def clean_text(self, text, language="vi"):
+        # 1. Bộ chuẩn hóa Tiếng Việt (Text Normalizer)
+        if language == "vi":
+            try:
+                from .vi_normalizer import normalize_vietnamese_text
+                text = normalize_vietnamese_text(text)
+            except ImportError as e:
+                logger.warning(f"Could not import vi_normalizer: {e}")
+
+        # 2. Xử lý khoảng trắng và ngắt nghỉ (Kế thừa bản cũ)
+        text = re.sub(r'[\*\r\n]+', ' ', text)
         text = re.sub(r'"\s?(.*?)\s?"', r"'\1'", text)
+        text = re.sub(r'([.,?!])([^\s])', r'\1 \2', text)
+        text = re.sub(r'\s+', ' ', text).strip()
+        
+        # Đảm bảo câu kết thúc bằng dấu chấm để AI hạ giọng tự nhiên
+        if text and text[-1] not in ['.', '!', '?']:
+            text += '.'
+            
         return text
 
     async def stream_generation(self,text,speaker_name,speaker_wav,language,output_file):
@@ -486,6 +529,26 @@ class TTSWrapper:
 
         logger.info(f"Processing time: {generate_elapsed_time:.2f} seconds.")
 
+    def generate_audio_tensor(self, text, speaker_name, speaker_wav, language):
+        gpt_cond_latent, speaker_embedding = self.get_or_create_latents(speaker_name, speaker_wav)
+
+        out = self.model.inference(
+            text,
+            language,
+            gpt_cond_latent=gpt_cond_latent,
+            speaker_embedding=speaker_embedding,
+            **self.tts_settings,
+        )
+
+        wav = torch.tensor(out["wav"]).unsqueeze(0)
+        
+        # --- POST-PROCESSING: EQ (Equalizer) ---
+        import torchaudio.functional as F
+        wav = F.treble_biquad(wav, sample_rate=24000, gain=3.5, central_freq=3000.0, Q=0.707)
+        wav = F.treble_biquad(wav, sample_rate=24000, gain=2.0, central_freq=6000.0, Q=0.707)
+        
+        return wav
+
     def local_generation(self,text,speaker_name,speaker_wav,language,output_file):
         # Log time
         generate_start_time = time.time()  # Record the start time of loading the model
@@ -500,7 +563,15 @@ class TTSWrapper:
             **self.tts_settings, # Expands the object with the settings and applies them for generation
         )
 
-        torchaudio.save(output_file, torch.tensor(out["wav"]).unsqueeze(0), 24000)
+        wav = torch.tensor(out["wav"]).unsqueeze(0)
+        
+        # --- POST-PROCESSING: EQ (Equalizer) ---
+        # Tăng nhẹ âm cao (Treble) ở mức vừa phải để không bị chói (shrill)
+        import torchaudio.functional as F
+        wav = F.treble_biquad(wav, sample_rate=24000, gain=3.5, central_freq=3000.0, Q=0.707)
+        wav = F.treble_biquad(wav, sample_rate=24000, gain=2.0, central_freq=6000.0, Q=0.707)
+        
+        torchaudio.save(output_file, wav, 24000)
 
         generate_end_time = time.time()  # Record the time to generate TTS
         generate_elapsed_time = generate_end_time - generate_start_time
@@ -517,7 +588,8 @@ class TTSWrapper:
 
     def get_speaker_wav(self, speaker_name_or_path):
         """ Gets the speaker_wav(s) for a given speaker name. """
-        if speaker_name_or_path.endswith('.wav'):
+        valid_extensions = ('.wav', '.mp3', '.flac', '.ogg', '.m4a')
+        if speaker_name_or_path.lower().endswith(valid_extensions):
             # it's a file name
             if os.path.isabs(speaker_name_or_path):
                 # absolute path; nothing to do
@@ -534,10 +606,18 @@ class TTSWrapper:
                 speaker_wav = [ os.path.join(full_path,wav) for wav in self.get_wav_files(full_path) ]
                 if len(speaker_wav) == 0:
                     raise ValueError(f"no wav files found in {full_path}")
-            elif os.path.isfile(wav_file):
-                speaker_wav = wav_file
             else:
-                raise ValueError(f"Speaker {speaker_name_or_path} not found.")
+                # Let's try to find if a file exists with any supported extension
+                found = False
+                valid_extensions = ('.wav', '.mp3', '.flac', '.ogg', '.m4a')
+                for ext in valid_extensions:
+                    if os.path.isfile(f"{full_path}{ext}"):
+                        speaker_wav = f"{full_path}{ext}"
+                        found = True
+                        break
+                
+                if not found:
+                    raise ValueError(f"Speaker {speaker_name_or_path} not found.")
 
         return speaker_wav
 
@@ -556,8 +636,16 @@ class TTSWrapper:
 
             # Check if 'text' is a valid path to a '.txt' file.
             if os.path.isfile(text) and text.lower().endswith('.txt'):
-                with open(text, 'r', encoding='utf-8') as f:
-                    text = f.read()
+                try:
+                    with open(text, 'r', encoding='utf-8') as f:
+                        text = f.read()
+                except UnicodeDecodeError:
+                    try:
+                        with open(text, 'r', encoding='utf-16') as f:
+                            text = f.read()
+                    except UnicodeDecodeError:
+                        with open(text, 'r', encoding='utf-8-sig', errors='ignore') as f:
+                            text = f.read()
 
             # Generate unic name for cached result
             if self.enable_cache_results:
@@ -566,7 +654,7 @@ class TTSWrapper:
                 output_file = os.path.join(self.output_folder, file_name_or_path)
 
             # Replace double quotes with single, asterisks, carriage returns, and line feeds
-            clear_text = self.clean_text(text)
+            clear_text = self.clean_text(text, language)
 
             # Generate a dictionary of the parameters to use for caching.
             text_params = {

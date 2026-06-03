@@ -5,14 +5,14 @@ import os
 parser = ArgumentParser(description="Run the Uvicorn server.")
 parser.add_argument("-hs", "--host", default="localhost", help="Host to bind")
 parser.add_argument("-p", "--port", default=8020, type=int, help="Port to bind")
-parser.add_argument("-d", "--device", default="cuda", type=str, help="Device that will be used, you can choose cpu or cuda")
+parser.add_argument("-d", "--device", default="cpu", type=str, help="Device that will be used, you can choose cpu or cuda")
 parser.add_argument("-sf", "--speaker-folder", default="speakers/", type=str, help="The folder where you get the samples for tts")
 parser.add_argument("-o", "--output", default="output/", type=str, help="Output folder")
 parser.add_argument("-t", "--tunnel", default="", type=str, help="URL of tunnel used (e.g: ngrok, localtunnel)")
 parser.add_argument("-mf", "--model-folder", default="xtts_models/", type=str, help="The place where models for XTTS will be stored, finetuned models should be stored in this folder.")
 parser.add_argument("-ms", "--model-source", default="local", choices=["api","apiManual", "local"],
                     help="Define the model source: 'api' for latest version from repository, apiManual for 2.0.2 model and api inference or 'local' for using local inference and model v2.0.2.")
-parser.add_argument("-v", "--version", default="v2.0.2", type=str, help="You can specify which version of xtts to use or specify your own model, just upload model folder in models folder ,This version will be used everywhere in local and apiManual.")
+parser.add_argument("-v", "--version", default="XTTS-v2-vietnamse", type=str, help="You can specify which version of xtts to use or specify your own model, just upload model folder in models folder ,This version will be used everywhere in local and apiManual.")
 parser.add_argument("--listen", action='store_true', help="Allows the server to be used outside the local computer, similar to -hs 0.0.0.0")
 parser.add_argument("--lowvram", action='store_true', help="Enable low vram mode which switches the model to RAM when not actively processing.")
 parser.add_argument("--deepspeed", action='store_true', help="Enables deepspeed mode, speeds up processing by several times.")
@@ -45,4 +45,4 @@ os.environ["STREAM_PLAY_SYNC"] = str(args.stream_play_sync).lower() # Enable Str
 
 from xtts_api_server.server import app
 
-uvicorn.run(app, host=host_ip, port=args.port)
+uvicorn.run("xtts_api_server.server:app", host=host_ip, port=args.port, reload=True)

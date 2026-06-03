@@ -124,9 +124,9 @@ def download_model(this_dir,model_version):
 
     # Define files and their corresponding URLs
     files_to_download = {
-         "config.json": f"https://huggingface.co/coqui/XTTS-v2/raw/{model_version}/config.json",
-         "model.pth": f"https://huggingface.co/coqui/XTTS-v2/resolve/{model_version}/model.pth?download=true",
-         "vocab.json": f"https://huggingface.co/coqui/XTTS-v2/raw/{model_version}/vocab.json",
+         "config.json": "https://huggingface.co/thivux/XTTS-v2-vietnamse/raw/main/config.json",
+         "model.pth": "https://huggingface.co/thivux/XTTS-v2-vietnamse/resolve/main/best_model.pth?download=true",
+         "vocab.json": "https://huggingface.co/thivux/XTTS-v2-vietnamse/raw/main/vocab.json",
          "speakers_xtts.pth": "https://huggingface.co/coqui/XTTS-v2/resolve/main/speakers_xtts.pth?download=true"
     }
 
