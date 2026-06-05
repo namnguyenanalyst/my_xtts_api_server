@@ -1,5 +1,5 @@
-# Use an official NVIDIA base image with CUDA support
-FROM nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04
+# Use an official Ubuntu base image for CPU
+FROM ubuntu:22.04
 
 # Set label for the docker image description
 LABEL description="Docker image for xtts-api-server"
@@ -18,14 +18,16 @@ RUN python3 -m pip install --upgrade pip setuptools wheel ninja virtualenv
 COPY . /app
 WORKDIR /app
 
-# Install Python dependencies
-RUN pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu121
-RUN pip install deepspeed
+# Create the xtts-server directory inside the container
+RUN mkdir -p /app/xtts-server
+
+# Install Python dependencies for CPU
+RUN pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
 RUN pip install -r requirements.txt
 RUN pip install .
 
 # Expose the container ports
 EXPOSE 8020
 
-# Run xtts_api_server when the container starts
-CMD ["bash", "-c", "python3 -m xtts_api_server --listen -p 8020 -t 'http://localhost:8020' -sf 'xtts-server/speakers' -o 'xtts-server/output' -mf 'xtts-server/models' --deepspeed"]
+# Run xtts_api_server when the container starts using CPU
+CMD ["bash", "-c", "python3 -m xtts_api_server --listen -p 8020 -t 'http://localhost:8020' -sf 'xtts-server/speakers' -o 'xtts-server/output' -mf 'xtts-server/models' -d cpu"]

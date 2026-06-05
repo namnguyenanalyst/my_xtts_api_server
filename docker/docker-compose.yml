@@ -1,4 +1,3 @@
-version: '3.4'
 
 services:
   xttsapiserver:
@@ -10,11 +9,6 @@ services:
     ports:
       - "${HOST_PORT:-8020}:${CONTAINER_PORT:-8020}"
     volumes:
-      - ./xtts-server:/xtts-server
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              device_ids: ['0']
-              capabilities: [gpu]
+      - ../xtts_models:/app/xtts-server/models
+      - ../speakers:/app/xtts-server/speakers
+      - ../output:/app/xtts-server/output

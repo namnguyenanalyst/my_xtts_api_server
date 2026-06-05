@@ -60,7 +60,7 @@ default_tts_settings = {
     "enable_text_splitting": True
 }
 
-official_model_list = ["v2.0.0","v2.0.1","v2.0.2","v2.0.3","main"]
+official_model_list = ["v2.0.0","v2.0.1","v2.0.2","v2.0.3","main", "XTTS-v2-vietnamse"]
 official_model_list_v2 = ["2.0.0","2.0.1","2.0.2","2.0.3"]
 
 reversed_supported_languages = {name: code for code, name in supported_languages.items()}
