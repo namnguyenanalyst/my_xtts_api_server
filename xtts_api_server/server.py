@@ -1,3 +1,16 @@
+import types
+from typing import Union, Any
+import coqpit.coqpit
+
+def is_union_patched(arg_type: Any) -> bool:
+    if type(arg_type).__name__ == "UnionType":
+        return True
+    try:
+        return coqpit.coqpit.safe_issubclass(arg_type, Union)
+    except AttributeError:
+        return False
+coqpit.coqpit.is_union = is_union_patched
+
 from TTS.api import TTS
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request, Query, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
@@ -74,7 +87,7 @@ tts_queue = asyncio.Semaphore(1)
 queue_count = 0
 MAX_QUEUE_SIZE = 10
 
-GC_OUTPUT_DAYS = int(os.getenv("GC_OUTPUT_DAYS", 7))
+GC_OUTPUT_DAYS = int(os.getenv("GC_OUTPUT_DAYS", 3))
 GC_TEMP_DAYS = int(os.getenv("GC_TEMP_DAYS", 1))
 
 async def garbage_collector():
