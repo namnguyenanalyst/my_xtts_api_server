@@ -23,6 +23,15 @@ import wave
 import numpy as np
 import librosa
 import soundfile as sf
+import TTS.tts.layers.xtts.tokenizer as xtts_tokenizer
+# Monkey-patch VoiceBpeTokenizer to support Vietnamese
+original_preprocess_text = xtts_tokenizer.VoiceBpeTokenizer.preprocess_text
+def patched_preprocess_text(self, txt, lang):
+    if lang == "vi":
+        from TTS.tts.utils.text.cleaners import basic_cleaners
+        return basic_cleaners(txt)
+    return original_preprocess_text(self, txt, lang)
+xtts_tokenizer.VoiceBpeTokenizer.preprocess_text = patched_preprocess_text
 
 # Class to check tts settings
 class InvalidSettingsError(Exception):

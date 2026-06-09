@@ -22,7 +22,7 @@ WORKDIR /app
 RUN mkdir -p /app/xtts-server
 
 # Install Python dependencies for CPU
-RUN pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
+RUN pip install torch torchaudio torchcodec --index-url https://download.pytorch.org/whl/cpu
 RUN pip install -r requirements.txt
 RUN pip install .
 # Expose the container ports
