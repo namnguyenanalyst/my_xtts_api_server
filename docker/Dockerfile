@@ -25,7 +25,6 @@ RUN mkdir -p /app/xtts-server
 RUN pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
 RUN pip install -r requirements.txt
 RUN pip install .
-
 # Expose the container ports
 EXPOSE 8020
 
