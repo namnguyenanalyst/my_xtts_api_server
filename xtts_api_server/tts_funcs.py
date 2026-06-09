@@ -51,13 +51,13 @@ supported_languages = {
 }
 
 default_tts_settings = {
-    "temperature" : 0.8,  # Tăng lên 0.8 để có ngữ điệu tự nhiên, bớt đều đều
+    "temperature" : 0.75,
     "length_penalty" : 1.0,
-    "repetition_penalty": 2.0,  # Giảm từ 5.0 xuống 2.0 để tránh lỗi nuốt chữ/bỏ chữ trong tiếng Việt
+    "repetition_penalty": 5.0,
     "top_k" : 50,
     "top_p" : 0.85,
-    "speed" : 1.2,  # Trả về 1.2 chuẩn để không bị vội/cụt chữ
-    "enable_text_splitting": True
+    "speed" : 1.2,
+    "enable_text_splitting": False
 }
 
 official_model_list = ["v2.0.0","v2.0.1","v2.0.2","v2.0.3","main", "XTTS-v2-vietnamse"]
@@ -481,6 +481,7 @@ class TTSWrapper:
                 logger.warning(f"Could not import vi_normalizer: {e}")
 
         # 2. Xử lý khoảng trắng và ngắt nghỉ (Kế thừa bản cũ)
+        text = text.replace('...', ',').replace('…', ',')
         text = re.sub(r'[\*\r\n]+', ' ', text)
         text = re.sub(r'"\s?(.*?)\s?"', r"'\1'", text)
         text = re.sub(r'([.,?!])([^\s])', r'\1 \2', text)

@@ -29,4 +29,4 @@ RUN pip install .
 EXPOSE 8020
 
 # Run xtts_api_server when the container starts using CPU
-CMD ["bash", "-c", "python3 -m xtts_api_server --listen -p 8020 -t 'http://localhost:8020' -sf 'xtts-server/speakers' -o 'xtts-server/output' -mf 'xtts-server/models' -d cpu"]
+CMD ["bash", "-c", "python3 -m xtts_api_server --listen -p 8020 -t 'http://localhost:8020' -sf 'speakers' -o 'output' -mf 'xtts_models' -d cpu --use-cache -v XTTS-v2-vietnamse"]
