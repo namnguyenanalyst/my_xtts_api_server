@@ -34,3 +34,4 @@ xtts_api_server/RealtimeTTS/engines/coqui_engine_old.py
 # Local Notes
 context.txt
 commands.txt
+docker_commands_guide.txt

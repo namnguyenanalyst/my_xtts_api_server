@@ -9,6 +9,6 @@ services:
     ports:
       - "${HOST_PORT:-8020}:${CONTAINER_PORT:-8020}"
     volumes:
-      - ../xtts_models:/app/xtts-server/models
-      - ../speakers:/app/xtts-server/speakers
-      - ../output:/app/xtts-server/output
+      - ../xtts_models:/app/xtts_models
+      - ../speakers:/app/speakers
+      - ../output:/app/output
