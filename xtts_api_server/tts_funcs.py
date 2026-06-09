@@ -24,7 +24,14 @@ import numpy as np
 import librosa
 import soundfile as sf
 import TTS.tts.layers.xtts.tokenizer as xtts_tokenizer
+
 # Monkey-patch VoiceBpeTokenizer to support Vietnamese
+original_tokenizer_init = xtts_tokenizer.VoiceBpeTokenizer.__init__
+def patched_tokenizer_init(self, vocab_file=None):
+    original_tokenizer_init(self, vocab_file)
+    self.char_limits["vi"] = 250
+xtts_tokenizer.VoiceBpeTokenizer.__init__ = patched_tokenizer_init
+
 original_preprocess_text = xtts_tokenizer.VoiceBpeTokenizer.preprocess_text
 def patched_preprocess_text(self, txt, lang):
     if lang == "vi":
@@ -66,7 +73,7 @@ default_tts_settings = {
     "top_k" : 50,
     "top_p" : 0.85,
     "speed" : 1.2,
-    "enable_text_splitting": False
+    "enable_text_splitting": True
 }
 
 official_model_list = ["v2.0.0","v2.0.1","v2.0.2","v2.0.3","main", "XTTS-v2-vietnamse"]
