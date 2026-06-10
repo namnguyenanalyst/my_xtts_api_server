@@ -219,12 +219,12 @@ class TTSSettingsRequest(BaseModel):
 
 class SynthesisRequest(BaseModel):
     text: str
-    speaker_wav: str 
+    speaker_wav: str = "Ngọc_Huyền"
     language: str
 
 class SynthesisFileRequest(BaseModel):
     text: str
-    speaker_wav: str 
+    speaker_wav: str = "Ngọc_Huyền"
     language: str
     file_name_or_path: str  
 
@@ -336,7 +336,7 @@ async def tts_with_progress(
     from fastapi.responses import StreamingResponse
 
     if not speaker_name and not speaker_wav and not speaker_file:
-        raise HTTPException(status_code=400, detail="Must provide speaker_name, speaker_wav, or speaker_file")
+        speaker_name = "Ngọc_Huyền"
 
     temp_speaker_path = None
     if speaker_file is not None:
@@ -426,7 +426,10 @@ async def tts_with_progress(
     )
 
 @app.get('/tts_stream')
-async def tts_stream(request: Request, text: str = Query(), speaker_wav: str = Query(), language: str = Query()):
+async def tts_stream(request: Request, text: str = Query(), speaker_wav: str = Query(default="Ngọc_Huyền"), language: str = Query()):
+    if not speaker_wav:
+        speaker_wav = "Ngọc_Huyền"
+
     if language.lower() == "auto":
         language = detect_language(text)
 
@@ -515,7 +518,7 @@ async def tts_to_audio(
     elif speaker_name is not None:
         final_speaker = speaker_name
     else:
-        raise HTTPException(status_code=400, detail="Either speaker_wav or speaker_name must be provided.")
+        final_speaker = "Ngọc_Huyền"
 
     if STREAM_MODE or STREAM_MODE_IMPROVE:
         try:
@@ -604,6 +607,9 @@ async def tts_to_audio(
 @app.post("/tts_to_file")
 async def tts_to_file(request: SynthesisFileRequest):
     try:
+        if not request.speaker_wav:
+            request.speaker_wav = "Ngọc_Huyền"
+
         if XTTS.model_source == "local":
           logger.info(f"Processing TTS to file with request: {request}")
 
@@ -641,8 +647,8 @@ async def tts_to_file(request: SynthesisFileRequest):
 @app.post("/tts_from_files/")
 async def tts_from_files(
     background_tasks: BackgroundTasks,
-    speaker_file: UploadFile = File(...),
     language: str = Form(...),
+    speaker_file: Optional[UploadFile] = File(None),
     text_file: Optional[UploadFile] = File(None),
     text: Optional[str] = Form(None)
 ):
@@ -677,14 +683,19 @@ async def tts_from_files(
     elif language.lower() not in supported_languages:
         raise HTTPException(status_code=400, detail="Language code sent is either unsupported or misspelled.")
 
-    # 2. Save speaker audio to a temporary file
-    temp_speaker_path = os.path.abspath(os.path.join(XTTS.speaker_folder, f"temp_{uuid4()}_{speaker_file.filename}"))
-    try:
-        with open(temp_speaker_path, "wb") as buffer:
-            shutil.copyfileobj(speaker_file.file, buffer)
-        XTTS.preprocess_speaker_audio(temp_speaker_path)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to save speaker file: {str(e)}")
+    # 2. Save speaker audio to a temporary file or use default
+    temp_speaker_path = None
+    if speaker_file is not None:
+        temp_speaker_path = os.path.abspath(os.path.join(XTTS.speaker_folder, f"temp_{uuid4()}_{speaker_file.filename}"))
+        try:
+            with open(temp_speaker_path, "wb") as buffer:
+                shutil.copyfileobj(speaker_file.file, buffer)
+            XTTS.preprocess_speaker_audio(temp_speaker_path)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to save speaker file: {str(e)}")
+        final_speaker = temp_speaker_path
+    else:
+        final_speaker = "Ngọc_Huyền"
 
     # 3. Generate audio
     try:
@@ -698,7 +709,7 @@ async def tts_from_files(
                 output_file_path = await run_in_threadpool(
                     XTTS.process_tts_to_file,
                     text=final_text,
-                    speaker_name_or_path=temp_speaker_path,
+                    speaker_name_or_path=final_speaker,
                     language=language.lower(),
                     file_name_or_path=f'{str(uuid4())}.wav'
                 )
@@ -707,12 +718,12 @@ async def tts_from_files(
 
         # 4. Clean up temporary files
         def cleanup(speaker_path, output_path, enable_cache):
-            if os.path.exists(speaker_path):
+            if speaker_path and os.path.exists(speaker_path):
                 os.remove(speaker_path)
-            if not enable_cache and os.path.exists(output_path):
+            if not enable_cache and output_path and os.path.exists(output_path):
                 os.remove(output_path)
             
-            if speaker_path in XTTS.latents_cache:
+            if speaker_path and speaker_path in XTTS.latents_cache:
                 del XTTS.latents_cache[speaker_path]
 
         background_tasks.add_task(cleanup, temp_speaker_path, output_file_path, XTTS.enable_cache_results)
@@ -723,7 +734,7 @@ async def tts_from_files(
             filename="output.wav"
         )
     except Exception as e:
-        if os.path.exists(temp_speaker_path):
+        if temp_speaker_path and os.path.exists(temp_speaker_path):
             os.remove(temp_speaker_path)
         logger.error(e)
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
