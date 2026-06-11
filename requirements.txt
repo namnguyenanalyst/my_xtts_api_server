@@ -21,3 +21,4 @@ soundfile
 python-multipart
 langdetect
 deepspeed
+torchcodec
