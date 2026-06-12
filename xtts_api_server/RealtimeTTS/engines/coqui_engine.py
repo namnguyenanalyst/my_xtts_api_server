@@ -20,7 +20,7 @@ class CoquiEngine(BaseEngine):
     def __init__(self, 
                  model_name = "tts_models/multilingual/multi-dataset/xtts_v2",
                  specific_model = "2.0.2",
-                 local_models_path = None, # specify a global model path here (otherwise it will create a directory "models" in the script directory)
+                 local_models_path = None, # specify a global model path here (otherwise it will create a directory "xtts_models" in the script directory)
                  voices_path = None,
                  cloning_reference_wav: Union[str, List[str]] = "",
                  language = "en",
@@ -46,7 +46,7 @@ class CoquiEngine(BaseEngine):
         Args:
             model_name (str): Name of the coqui model to use. Tested with XTTS only.
             specific_model (str): Name of the specific model to use. If not specified, the most recent model will be downloaded.
-            local_models_path (str): Path to a local models directory. If not specified, a directory "models" will be created in the script directory.
+            local_models_path (str): Path to a local models directory. If not specified, a directory "xtts_models" will be created in the script directory.
             cloning_reference_wav (str): Name to the file containing the voice to clone. Works with a 44100Hz or 22050Hz mono 32bit float WAV file.
             language (str): Language to use for the coqui model.
             speed (float): Speed factor for the coqui model.
@@ -382,10 +382,19 @@ class CoquiEngine(BaseEngine):
                     # Send silent audio
                     sample_rate = config.audio.sample_rate  
 
-                    if text[-1] in [","]:
-                        silence_duration = 0.2  # add 200ms speaking pause in case of comma
-                    else:
-                        silence_duration = 0.5  # add 500ms speaking pause in case of sentence end
+                    # Punctuation pauses config
+                    punctuation_pauses = {
+                        ".": 0.45,
+                        ",": 0.25,
+                        ";": 0.3,
+                        "\n": 0.6,
+                        "!": 0.45,
+                        "?": 0.45,
+                        ":": 0.3
+                    }
+                    
+                    last_char = text[-1] if len(text) > 0 else ""
+                    silence_duration = punctuation_pauses.get(last_char, 0.5)
 
                     silent_samples = int(sample_rate * silence_duration)
                     silent_chunk = np.zeros(silent_samples, dtype=np.float32)
@@ -559,7 +568,7 @@ class CoquiEngine(BaseEngine):
             model_folder = os.path.join(local_models_path, f'{model_name}')
             logging.info(f"Local models path: \"{model_folder}\"")
         else:
-            model_folder = os.path.join(os.getcwd(), 'models', f'{model_name}')
+            model_folder = os.path.join(os.getcwd(), 'xtts_models', f'{model_name}')
             logging.info(f"Checking for models within application directory: \"{model_folder}\"")
 
         os.makedirs(model_folder, exist_ok=True)

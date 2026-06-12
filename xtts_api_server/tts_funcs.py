@@ -498,7 +498,7 @@ class TTSWrapper:
 
         # 2. Xử lý khoảng trắng và ngắt nghỉ (Kế thừa bản cũ)
         text = text.replace('...', ',').replace('…', ',')
-        text = re.sub(r'[\*\r\n]+', ' ', text)
+        text = re.sub(r'[\*\r]+', ' ', text)
         text = re.sub(r'"\s?(.*?)\s?"', r"'\1'", text)
         text = re.sub(r'([.,?!])([^\s])', r'\1 \2', text)
         text = re.sub(r'\s+', ' ', text).strip()
@@ -575,15 +575,52 @@ class TTSWrapper:
 
         gpt_cond_latent, speaker_embedding = self.get_or_create_latents(speaker_name, speaker_wav)
 
-        out = self.model.inference(
-            text,
-            language,
-            gpt_cond_latent=gpt_cond_latent,
-            speaker_embedding=speaker_embedding,
-            **self.tts_settings, # Expands the object with the settings and applies them for generation
-        )
+        punctuation_pauses = {
+            ".": 0.45,
+            ",": 0.25,
+            ";": 0.3,
+            "\n": 0.6,
+            "!": 0.45,
+            "?": 0.45,
+            ":": 0.3
+        }
 
-        wav = torch.tensor(out["wav"]).unsqueeze(0)
+        # Phân tách câu giữ nguyên dấu
+        segments = re.split(r'([.,;\n!?:]+)', text)
+        sentences = []
+        for i in range(0, len(segments) - 1, 2):
+            sentences.append(segments[i] + segments[i+1])
+        if len(segments) % 2 == 1 and segments[-1].strip():
+            sentences.append(segments[-1])
+        if not sentences:
+            sentences = [text]
+
+        wavs = []
+        for sentence in sentences:
+            if not sentence.strip():
+                continue
+            out = self.model.inference(
+                sentence.strip(),
+                language,
+                gpt_cond_latent=gpt_cond_latent,
+                speaker_embedding=speaker_embedding,
+                **self.tts_settings, # Expands the object with the settings and applies them for generation
+            )
+            wavs.append(torch.tensor(out["wav"]).unsqueeze(0))
+            
+            # Tính toán thời gian nghỉ
+            last_char = ""
+            for char in reversed(sentence):
+                if char in punctuation_pauses:
+                    last_char = char
+                    break
+            
+            silence_duration = punctuation_pauses.get(last_char, 0.0)
+            if silence_duration > 0:
+                silent_samples = int(24000 * silence_duration)
+                wavs.append(torch.zeros((1, silent_samples), dtype=torch.float32))
+
+        wav = torch.cat(wavs, dim=1) if wavs else torch.zeros((1, 1), dtype=torch.float32)
         
         # --- POST-PROCESSING: EQ (Equalizer) ---
         # Cắt Bass (giảm độ ồm trầm) và tăng Treble để giọng trong hơn
