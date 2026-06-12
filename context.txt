@@ -18,5 +18,25 @@
    - 👉 **Hướng phát triển:** Bổ sung cơ chế xác thực Middleware bằng Token hoặc API Key vào FastAPI Header.
 
 
+## 🎙️ Các giải pháp Cải thiện chất lượng & Khắc phục giọng ồm, tối
 
+Việc sử dụng cơ chế **Zero-shot Voice Cloning** của XTTS sẽ sao chép được khoảng 80-90% âm sắc và phong cách của người nói. Để đạt mức độ chân thực và giống bản gốc cao nhất, dưới đây là các giải pháp:
 
+### 1. Dùng nhiều mẫu kết hợp (Dễ nhất - Đáng thử ngay)
+XTTS có hỗ trợ trích xuất đặc trưng từ **nhiều file âm thanh cùng lúc** thay vì 1 file. Việc này giúp mô hình nắm bắt giọng nói toàn diện hơn.
+*   **Cách làm:** Trong thư mục `speakers/`, thay vì để 1 file `default_voice.wav`, tạo một **thư mục** tên là `default_voice`.
+*   Cắt giọng gốc ra làm 3 - 5 file `.wav` nhỏ (mỗi file tầm 5-7 giây, thể hiện các trạng thái cảm xúc, tông giọng lên xuống khác nhau) và bỏ tất cả vào thư mục đó.
+*   Hệ thống sẽ tự động gộp (average) đặc trưng của tất cả các file này lại để tổng hợp ra giọng chuẩn xác hơn.
+
+### 2. Tinh chỉnh lại file mẫu (Audio Engineering)
+Đôi khi hệ thống không bắt được chính xác giọng vì file mẫu chưa đạt chuẩn tối ưu nhất cho AI:
+*   Đảm bảo đoạn âm thanh mẫu có **độ dài từ 6 - 10 giây**. Ngắn quá AI không học đủ, dài quá (trên 15 giây) AI sẽ bị loãng thông tin.
+*   Hãy chọn đoạn mẫu mà người nói phát âm rõ chữ nhất, nhịp điệu giống với kịch bản mà bạn định dùng để tạo text nhất (ví dụ: cần đọc bản tin thì lấy mẫu lúc họ đọc bản tin, không lấy mẫu lúc đang trò chuyện đời thường).
+
+### 3. Phương pháp Kết hợp XTTS + RVC (Chuyên nghiệp - Giống 99%)
+Nếu cần một hệ thống giọng nói hoàn hảo, ngành AI hiện tại thường sử dụng pipeline kết hợp 2 mô hình:
+*   **Bước 1 (Dùng XTTS):** Vẫn dùng XTTS để chuyển Text sang Speech. Ở bước này, XTTS lo nhiệm vụ tạo ra ngữ điệu, nhịp nghỉ, cảm xúc, cách ngắt câu tự nhiên (nhưng âm sắc có thể chưa giống 100%).
+*   **Bước 2 (Dùng RVC - Retrieval-based Voice Conversion):** Huấn luyện một mô hình RVC riêng cho giọng `default_voice` này (chỉ cần khoảng 10 phút dữ liệu giọng nói sạch là train được). Sau đó, lấy file âm thanh do XTTS sinh ra đưa qua RVC để "khoác" lớp áo âm sắc của người thật lên. Kết quả đầu ra sẽ giống y hệt người thật, hoàn hảo đến từng tiếng thở.
+
+### 4. Fine-Tune (Huấn luyện lại) mô hình XTTS (Tốn tài nguyên)
+Thay vì dùng Zero-shot, có thể Fine-tune thẳng mô hình XTTSv2 bằng giọng của người này. Quá trình này yêu cầu khoảng 20-30 phút dữ liệu giọng nói sạch đã được gỡ băng (transcript) khớp với từng đoạn audio, và yêu cầu máy tính có Card đồ họa (VRAM > 12GB) để chạy quá trình train.

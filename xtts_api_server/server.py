@@ -219,12 +219,12 @@ class TTSSettingsRequest(BaseModel):
 
 class SynthesisRequest(BaseModel):
     text: str
-    speaker_wav: str = "Ngọc_Huyền"
+    speaker_wav: str = "default_voice"
     language: str
 
 class SynthesisFileRequest(BaseModel):
     text: str
-    speaker_wav: str = "Ngọc_Huyền"
+    speaker_wav: str = "default_voice"
     language: str
     file_name_or_path: str  
 
@@ -336,7 +336,7 @@ async def tts_with_progress(
     from fastapi.responses import StreamingResponse
 
     if not speaker_name and not speaker_wav and not speaker_file:
-        speaker_name = "Ngọc_Huyền"
+        speaker_name = "default_voice"
 
     temp_speaker_path = None
     if speaker_file is not None:
@@ -426,9 +426,9 @@ async def tts_with_progress(
     )
 
 @app.get('/tts_stream')
-async def tts_stream(request: Request, text: str = Query(), speaker_wav: str = Query(default="Ngọc_Huyền"), language: str = Query()):
+async def tts_stream(request: Request, text: str = Query(), speaker_wav: str = Query(default="default_voice"), language: str = Query()):
     if not speaker_wav:
-        speaker_wav = "Ngọc_Huyền"
+        speaker_wav = "default_voice"
 
     if language.lower() == "auto":
         language = detect_language(text)
@@ -518,7 +518,7 @@ async def tts_to_audio(
     elif speaker_name is not None:
         final_speaker = speaker_name
     else:
-        final_speaker = "Ngọc_Huyền"
+        final_speaker = "default_voice"
 
     if STREAM_MODE or STREAM_MODE_IMPROVE:
         try:
@@ -608,7 +608,7 @@ async def tts_to_audio(
 async def tts_to_file(request: SynthesisFileRequest):
     try:
         if not request.speaker_wav:
-            request.speaker_wav = "Ngọc_Huyền"
+            request.speaker_wav = "default_voice"
 
         if XTTS.model_source == "local":
           logger.info(f"Processing TTS to file with request: {request}")
@@ -695,7 +695,7 @@ async def tts_from_files(
             raise HTTPException(status_code=500, detail=f"Failed to save speaker file: {str(e)}")
         final_speaker = temp_speaker_path
     else:
-        final_speaker = "Ngọc_Huyền"
+        final_speaker = "default_voice"
 
     # 3. Generate audio
     try:

@@ -561,8 +561,11 @@ class TTSWrapper:
         
         # --- POST-PROCESSING: EQ (Equalizer) ---
         import torchaudio.functional as F
-        wav = F.treble_biquad(wav, sample_rate=24000, gain=3.5, central_freq=3000.0, Q=0.707)
-        wav = F.treble_biquad(wav, sample_rate=24000, gain=2.0, central_freq=6000.0, Q=0.707)
+        # Cắt Bass (giảm độ ồm trầm)
+        wav = F.bass_biquad(wav, sample_rate=24000, gain=-5.0, central_freq=250.0, Q=0.707)
+        # Tăng Treble (tăng độ sáng, trong)
+        wav = F.treble_biquad(wav, sample_rate=24000, gain=4.5, central_freq=3500.0, Q=0.707)
+        wav = F.treble_biquad(wav, sample_rate=24000, gain=2.5, central_freq=7000.0, Q=0.707)
         
         return wav
 
@@ -583,10 +586,11 @@ class TTSWrapper:
         wav = torch.tensor(out["wav"]).unsqueeze(0)
         
         # --- POST-PROCESSING: EQ (Equalizer) ---
-        # Tăng nhẹ âm cao (Treble) ở mức vừa phải để không bị chói (shrill)
+        # Cắt Bass (giảm độ ồm trầm) và tăng Treble để giọng trong hơn
         import torchaudio.functional as F
-        wav = F.treble_biquad(wav, sample_rate=24000, gain=3.5, central_freq=3000.0, Q=0.707)
-        wav = F.treble_biquad(wav, sample_rate=24000, gain=2.0, central_freq=6000.0, Q=0.707)
+        wav = F.bass_biquad(wav, sample_rate=24000, gain=-5.0, central_freq=250.0, Q=0.707)
+        wav = F.treble_biquad(wav, sample_rate=24000, gain=4.5, central_freq=3500.0, Q=0.707)
+        wav = F.treble_biquad(wav, sample_rate=24000, gain=2.5, central_freq=7000.0, Q=0.707)
         
         torchaudio.save(output_file, wav, 24000)
 
