@@ -96,17 +96,17 @@ def upgrade_stream2sentence_package():
 
 def check_tts_version():
     try:
-        tts_version = metadata.version("tts")
-        # print(f"[XTTS] TTS version: {tts_version}")
-
-        if version.parse(tts_version) != version.parse("0.21.3"):
-            upgrade_tts_package()
-            # print("[XTTS] TTS version is too old. Please upgrade to version 0.21.2 or later.")
-            # print("[XTTS] pip install --upgrade tts")
-        # else:
-            # logger.info("TTS version is up to date.")
+        try:
+            tts_version = metadata.version("coqui-tts")
+        except metadata.PackageNotFoundError:
+            tts_version = metadata.version("tts")
+            
+        # Bypass downgrade if coqui-tts is used
+        if tts_version != "0.21.3" and "coqui-tts" not in sys.modules:
+            pass # Keep it simple, do not force downgrade
+            
     except metadata.PackageNotFoundError:
-        print("TTS is not installed.")
+        print("TTS (or coqui-tts) is not installed.")
 
 
 def check_stream2sentence_version():

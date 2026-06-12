@@ -35,3 +35,4 @@ xtts_api_server/RealtimeTTS/engines/coqui_engine_old.py
 context.txt
 commands.txt
 docker_commands_guide.txt
+voice-cloning-quality.md

@@ -485,9 +485,9 @@ class CoquiEngine(BaseEngine):
         # A fast fix for last character, may produce weird sounds if it is with text
         text = text.strip()
         text = text.replace("</s>", "")
-        text = re.sub("```.*```", "", text, flags=re.DOTALL)
-        text = re.sub("`.*`", "", text, flags=re.DOTALL)
-        text = re.sub("\(.*\)", "", text, flags=re.DOTALL)
+        text = re.sub(r"```.*```", "", text, flags=re.DOTALL)
+        text = re.sub(r"`.*`", "", text, flags=re.DOTALL)
+        text = re.sub(r"\(.*\)", "", text, flags=re.DOTALL)
         text = text.replace("```", "")
         text = text.replace("...", " ")
         text = text.replace("»", "")

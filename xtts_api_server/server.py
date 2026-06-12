@@ -1,3 +1,8 @@
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning, module="jieba")
+warnings.filterwarnings("ignore", category=FutureWarning, module="transformers.utils.generic")
+warnings.filterwarnings("ignore", message=".*_register_pytree_node.*")
+
 import types
 from typing import Union, Any
 import coqpit.coqpit

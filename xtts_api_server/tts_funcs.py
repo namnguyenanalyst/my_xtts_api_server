@@ -67,7 +67,7 @@ supported_languages = {
 }
 
 default_tts_settings = {
-    "temperature" : 0.75,
+    "temperature" : 0.35,
     "length_penalty" : 1.0,
     "repetition_penalty": 5.0,
     "top_k" : 50,
@@ -301,7 +301,11 @@ class TTSWrapper:
     def get_or_create_latents(self, speaker_name, speaker_wav):
         if speaker_name not in self.latents_cache:
             logger.info(f"creating latents for {speaker_name}: {speaker_wav}")
-            gpt_cond_latent, speaker_embedding = self.model.get_conditioning_latents(speaker_wav)
+            gpt_cond_latent, speaker_embedding = self.model.get_conditioning_latents(
+                audio_path=speaker_wav,
+                max_ref_length=60,
+                gpt_cond_len=30
+                )
             self.latents_cache[speaker_name] = (gpt_cond_latent, speaker_embedding)
         return self.latents_cache[speaker_name]
 
@@ -560,12 +564,12 @@ class TTSWrapper:
         wav = torch.tensor(out["wav"]).unsqueeze(0)
         
         # --- POST-PROCESSING: EQ (Equalizer) ---
-        import torchaudio.functional as F
-        # Cắt Bass (giảm độ ồm trầm)
-        wav = F.bass_biquad(wav, sample_rate=24000, gain=-5.0, central_freq=250.0, Q=0.707)
-        # Tăng Treble (tăng độ sáng, trong)
-        wav = F.treble_biquad(wav, sample_rate=24000, gain=4.5, central_freq=3500.0, Q=0.707)
-        wav = F.treble_biquad(wav, sample_rate=24000, gain=2.5, central_freq=7000.0, Q=0.707)
+        # import torchaudio.functional as F
+        # # Cắt Bass (giảm độ ồm trầm)
+        # wav = F.bass_biquad(wav, sample_rate=24000, gain=-5.0, central_freq=250.0, Q=0.707)
+        # # Tăng Treble (tăng độ sáng, trong)
+        # wav = F.treble_biquad(wav, sample_rate=24000, gain=4.5, central_freq=3500.0, Q=0.707)
+        # wav = F.treble_biquad(wav, sample_rate=24000, gain=2.5, central_freq=7000.0, Q=0.707)
         
         return wav
 
@@ -623,11 +627,11 @@ class TTSWrapper:
         wav = torch.cat(wavs, dim=1) if wavs else torch.zeros((1, 1), dtype=torch.float32)
         
         # --- POST-PROCESSING: EQ (Equalizer) ---
-        # Cắt Bass (giảm độ ồm trầm) và tăng Treble để giọng trong hơn
-        import torchaudio.functional as F
-        wav = F.bass_biquad(wav, sample_rate=24000, gain=-5.0, central_freq=250.0, Q=0.707)
-        wav = F.treble_biquad(wav, sample_rate=24000, gain=4.5, central_freq=3500.0, Q=0.707)
-        wav = F.treble_biquad(wav, sample_rate=24000, gain=2.5, central_freq=7000.0, Q=0.707)
+        # # Cắt Bass (giảm độ ồm trầm) và tăng Treble để giọng trong hơn
+        # import torchaudio.functional as F
+        # wav = F.bass_biquad(wav, sample_rate=24000, gain=-5.0, central_freq=250.0, Q=0.707)
+        # wav = F.treble_biquad(wav, sample_rate=24000, gain=4.5, central_freq=3500.0, Q=0.707)
+        # wav = F.treble_biquad(wav, sample_rate=24000, gain=2.5, central_freq=7000.0, Q=0.707)
         
         torchaudio.save(output_file, wav, 24000)
 
