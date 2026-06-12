@@ -72,7 +72,7 @@ default_tts_settings = {
     "repetition_penalty": 5.0,
     "top_k" : 50,
     "top_p" : 0.85,
-    "speed" : 1.2,
+    "speed" : 1.25,
     "enable_text_splitting": True
 }
 
@@ -564,12 +564,21 @@ class TTSWrapper:
         wav = torch.tensor(out["wav"]).unsqueeze(0)
         
         # --- POST-PROCESSING: EQ (Equalizer) ---
-        # import torchaudio.functional as F
-        # # Cắt Bass (giảm độ ồm trầm)
-        # wav = F.bass_biquad(wav, sample_rate=24000, gain=-5.0, central_freq=250.0, Q=0.707)
-        # # Tăng Treble (tăng độ sáng, trong)
-        # wav = F.treble_biquad(wav, sample_rate=24000, gain=4.5, central_freq=3500.0, Q=0.707)
-        # wav = F.treble_biquad(wav, sample_rate=24000, gain=2.5, central_freq=7000.0, Q=0.707)
+        import torchaudio.functional as F
+        # 1. Cắt Bass MẠNH hơn — TTS đang dư ~20% energy ở đây
+        wav = F.bass_biquad(wav, sample_rate=24000, gain=-5.0, central_freq=200.0, Q=0.707)
+
+        # 2. Boost Low-mid — phục hồi thân giọng tự nhiên
+        wav = F.equalizer_biquad(wav, sample_rate=24000, center_freq=400.0, gain=3.0, Q=1.0)
+
+        # 3. Boost Mid — quan trọng nhất, giúp giọng sáng và rõ như gốc
+        wav = F.equalizer_biquad(wav, sample_rate=24000, center_freq=1200.0, gain=5.0, Q=0.8)
+
+        # 4. Boost Hi-mid nhẹ — thêm độ hiện diện (presence)
+        wav = F.equalizer_biquad(wav, sample_rate=24000, center_freq=3000.0, gain=2.5, Q=1.0)
+
+        # 5. Treble — giữ nguyên hoặc boost nhẹ
+        wav = F.treble_biquad(wav, sample_rate=24000, gain=2.0, central_freq=5000.0, Q=0.707)
         
         return wav
 
@@ -627,13 +636,24 @@ class TTSWrapper:
         wav = torch.cat(wavs, dim=1) if wavs else torch.zeros((1, 1), dtype=torch.float32)
         
         # --- POST-PROCESSING: EQ (Equalizer) ---
-        # # Cắt Bass (giảm độ ồm trầm) và tăng Treble để giọng trong hơn
-        # import torchaudio.functional as F
-        # wav = F.bass_biquad(wav, sample_rate=24000, gain=-5.0, central_freq=250.0, Q=0.707)
-        # wav = F.treble_biquad(wav, sample_rate=24000, gain=4.5, central_freq=3500.0, Q=0.707)
-        # wav = F.treble_biquad(wav, sample_rate=24000, gain=2.5, central_freq=7000.0, Q=0.707)
+        import torchaudio.functional as F
+        # 1. Cắt Bass MẠNH hơn
+        wav = F.bass_biquad(wav, sample_rate=24000, gain=-5.0, central_freq=200.0, Q=0.707)
+        # 2. Boost Low-mid
+        wav = F.equalizer_biquad(wav, sample_rate=24000, center_freq=400.0, gain=3.0, Q=1.0)
+        # 3. Boost Mid
+        wav = F.equalizer_biquad(wav, sample_rate=24000, center_freq=1200.0, gain=5.0, Q=0.8)
+        # 4. Boost Hi-mid nhẹ
+        wav = F.equalizer_biquad(wav, sample_rate=24000, center_freq=3000.0, gain=2.5, Q=1.0)
+        # 5. Treble
+        wav = F.treble_biquad(wav, sample_rate=24000, gain=2.0, central_freq=5000.0, Q=0.707)
         
-        torchaudio.save(output_file, wav, 24000)
+        # --- RESAMPLE TO 44100Hz AND SAVE AS MP3 128kbps ---
+        import torchaudio.transforms as T
+        resampler = T.Resample(orig_freq=24000, new_freq=44100)
+        wav_44k = resampler(wav)
+        
+        torchaudio.save(output_file, wav_44k, 44100, format="mp3", compression=128)
 
         generate_end_time = time.time()  # Record the time to generate TTS
         generate_elapsed_time = generate_end_time - generate_start_time
@@ -695,6 +715,9 @@ class TTSWrapper:
             else:
                 # Only a filename was provided; prepend with output folder.
                 output_file = os.path.join(self.output_folder, file_name_or_path)
+
+            if output_file.endswith('.wav'):
+                output_file = output_file[:-4] + '.mp3'
 
             # Check if 'text' is a valid path to a '.txt' file.
             if os.path.isfile(text) and text.lower().endswith('.txt'):
