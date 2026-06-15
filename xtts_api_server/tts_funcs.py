@@ -648,12 +648,12 @@ class TTSWrapper:
         # 5. Treble
         wav = F.treble_biquad(wav, sample_rate=24000, gain=2.0, central_freq=5000.0, Q=0.707)
         
-        # --- RESAMPLE TO 44100Hz AND SAVE AS MP3 128kbps ---
-        import torchaudio.transforms as T
-        resampler = T.Resample(orig_freq=24000, new_freq=44100)
-        wav_44k = resampler(wav)
+        # # --- RESAMPLE TO 44100Hz AND SAVE AS MP3 128kbps ---
+        # import torchaudio.transforms as T
+        # resampler = T.Resample(orig_freq=24000, new_freq=44100)
+        # wav_44k = resampler(wav)
         
-        torchaudio.save(output_file, wav_44k, 44100, format="mp3", compression=128)
+        # torchaudio.save(output_file, wav_44k, 44100, format="mp3", compression=128)
 
         generate_end_time = time.time()  # Record the time to generate TTS
         generate_elapsed_time = generate_end_time - generate_start_time
