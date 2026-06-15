@@ -25,6 +25,10 @@ parser.add_argument("--use-cache", action='store_true', help="Enables caching of
 parser.add_argument("--streaming-mode", action='store_true', help="Enables streaming mode, currently needs a lot of work.")
 parser.add_argument("--streaming-mode-improve", action='store_true', help="Includes an improved streaming mode that consumes 2gb more VRAM and uses a better tokenizer, good for languages such as Chinese")
 parser.add_argument("--stream-play-sync", action='store_true', help="Additional flag for streaming mod that allows you to play all audio one at a time without interruption")
+parser.add_argument("--enable-denoising", action='store_true', help="Enable denoising and dereverberation for reference audio files.")
+parser.add_argument("--denoising-backend", default="demucs", choices=["demucs", "noisereduce"], help="The backend used for denoising ('demucs' or 'noisereduce').")
+parser.add_argument("--output-48k", action='store_true', help="Upsample synthesized audio to 48kHz.")
+parser.add_argument("--up-sampler-backend", default="dsp", choices=["dsp", "audiosr"], help="The backend used for 48kHz upsampling ('dsp' or 'audiosr').")
 
 args = parser.parse_args()
 
@@ -47,6 +51,10 @@ os.environ["LOWVRAM_MODE"] = str(args.lowvram).lower() # Set lowvram mode
 os.environ["STREAM_MODE"] = str(args.streaming_mode).lower() # Enable Streaming mode
 os.environ["STREAM_MODE_IMPROVE"] = str(args.streaming_mode_improve).lower() # Enable improved Streaming mode
 os.environ["STREAM_PLAY_SYNC"] = str(args.stream_play_sync).lower() # Enable Streaming mode
+os.environ["ENABLE_DENOISING"] = str(args.enable_denoising).lower()
+os.environ["DENOISING_BACKEND"] = args.denoising_backend
+os.environ["OUTPUT_SAMPLE_RATE_48K"] = str(args.output_48k).lower()
+os.environ["UP_SAMPLER_BACKEND"] = args.up_sampler_backend
 
 from xtts_api_server.server import app
 

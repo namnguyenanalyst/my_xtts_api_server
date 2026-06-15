@@ -67,12 +67,12 @@ supported_languages = {
 }
 
 default_tts_settings = {
-    "temperature" : 0.35,
+    "temperature" : 0.75,
     "length_penalty" : 1.0,
     "repetition_penalty": 5.0,
     "top_k" : 50,
     "top_p" : 0.85,
-    "speed" : 1.25,
+    "speed" : 1.2,
     "enable_text_splitting": True
 }
 
@@ -301,11 +301,7 @@ class TTSWrapper:
     def get_or_create_latents(self, speaker_name, speaker_wav):
         if speaker_name not in self.latents_cache:
             logger.info(f"creating latents for {speaker_name}: {speaker_wav}")
-            gpt_cond_latent, speaker_embedding = self.model.get_conditioning_latents(
-                audio_path=speaker_wav,
-                max_ref_length=60,
-                gpt_cond_len=30
-                )
+            gpt_cond_latent, speaker_embedding = self.model.get_conditioning_latents(speaker_wav)
             self.latents_cache[speaker_name] = (gpt_cond_latent, speaker_embedding)
         return self.latents_cache[speaker_name]
 
@@ -502,7 +498,7 @@ class TTSWrapper:
 
         # 2. Xử lý khoảng trắng và ngắt nghỉ (Kế thừa bản cũ)
         text = text.replace('...', ',').replace('…', ',')
-        text = re.sub(r'[\*\r]+', ' ', text)
+        text = re.sub(r'[\*\r\n]+', ' ', text)
         text = re.sub(r'"\s?(.*?)\s?"', r"'\1'", text)
         text = re.sub(r'([.,?!])([^\s])', r'\1 \2', text)
         text = re.sub(r'\s+', ' ', text).strip()
@@ -565,20 +561,8 @@ class TTSWrapper:
         
         # --- POST-PROCESSING: EQ (Equalizer) ---
         import torchaudio.functional as F
-        # 1. Cắt Bass MẠNH hơn — TTS đang dư ~20% energy ở đây
-        wav = F.bass_biquad(wav, sample_rate=24000, gain=-5.0, central_freq=200.0, Q=0.707)
-
-        # 2. Boost Low-mid — phục hồi thân giọng tự nhiên
-        wav = F.equalizer_biquad(wav, sample_rate=24000, center_freq=400.0, gain=3.0, Q=1.0)
-
-        # 3. Boost Mid — quan trọng nhất, giúp giọng sáng và rõ như gốc
-        wav = F.equalizer_biquad(wav, sample_rate=24000, center_freq=1200.0, gain=5.0, Q=0.8)
-
-        # 4. Boost Hi-mid nhẹ — thêm độ hiện diện (presence)
-        wav = F.equalizer_biquad(wav, sample_rate=24000, center_freq=3000.0, gain=2.5, Q=1.0)
-
-        # 5. Treble — giữ nguyên hoặc boost nhẹ
-        wav = F.treble_biquad(wav, sample_rate=24000, gain=2.0, central_freq=5000.0, Q=0.707)
+        wav = F.treble_biquad(wav, sample_rate=24000, gain=3.5, central_freq=3000.0, Q=0.707)
+        wav = F.treble_biquad(wav, sample_rate=24000, gain=2.0, central_freq=6000.0, Q=0.707)
         
         return wav
 
@@ -588,70 +572,22 @@ class TTSWrapper:
 
         gpt_cond_latent, speaker_embedding = self.get_or_create_latents(speaker_name, speaker_wav)
 
-        punctuation_pauses = {
-            ".": 0.45,
-            ",": 0.25,
-            ";": 0.3,
-            "\n": 0.6,
-            "!": 0.45,
-            "?": 0.45,
-            ":": 0.3
-        }
+        out = self.model.inference(
+            text,
+            language,
+            gpt_cond_latent=gpt_cond_latent,
+            speaker_embedding=speaker_embedding,
+            **self.tts_settings, # Expands the object with the settings and applies them for generation
+        )
 
-        # Phân tách câu giữ nguyên dấu
-        segments = re.split(r'([.,;\n!?:]+)', text)
-        sentences = []
-        for i in range(0, len(segments) - 1, 2):
-            sentences.append(segments[i] + segments[i+1])
-        if len(segments) % 2 == 1 and segments[-1].strip():
-            sentences.append(segments[-1])
-        if not sentences:
-            sentences = [text]
-
-        wavs = []
-        for sentence in sentences:
-            if not sentence.strip():
-                continue
-            out = self.model.inference(
-                sentence.strip(),
-                language,
-                gpt_cond_latent=gpt_cond_latent,
-                speaker_embedding=speaker_embedding,
-                **self.tts_settings, # Expands the object with the settings and applies them for generation
-            )
-            wavs.append(torch.tensor(out["wav"]).unsqueeze(0))
-            
-            # Tính toán thời gian nghỉ
-            last_char = ""
-            for char in reversed(sentence):
-                if char in punctuation_pauses:
-                    last_char = char
-                    break
-            
-            silence_duration = punctuation_pauses.get(last_char, 0.0)
-            if silence_duration > 0:
-                silent_samples = int(24000 * silence_duration)
-                wavs.append(torch.zeros((1, silent_samples), dtype=torch.float32))
-
-        wav = torch.cat(wavs, dim=1) if wavs else torch.zeros((1, 1), dtype=torch.float32)
+        wav = torch.tensor(out["wav"]).unsqueeze(0)
         
-
         # --- POST-PROCESSING: EQ (Equalizer) ---
+        # Tăng nhẹ âm cao (Treble) ở mức vừa phải để không bị chói (shrill)
         import torchaudio.functional as F
-        # 1. Cắt Bass MẠNH hơn
-        wav = F.bass_biquad(wav, sample_rate=24000, gain=-5.0, central_freq=200.0, Q=0.707)
-        # 2. Boost Low-mid
-        wav = F.equalizer_biquad(wav, sample_rate=24000, center_freq=400.0, gain=3.0, Q=1.0)
-        # 3. Boost Mid
-        wav = F.equalizer_biquad(wav, sample_rate=24000, center_freq=1200.0, gain=5.0, Q=0.8)
-        # 4. Boost Hi-mid nhẹ
-        wav = F.equalizer_biquad(wav, sample_rate=24000, center_freq=3000.0, gain=2.5, Q=1.0)
-        # 5. Treble
-        wav = F.treble_biquad(wav, sample_rate=24000, gain=2.0, central_freq=5000.0, Q=0.707)
+        wav = F.treble_biquad(wav, sample_rate=24000, gain=3.5, central_freq=3000.0, Q=0.707)
+        wav = F.treble_biquad(wav, sample_rate=24000, gain=2.0, central_freq=6000.0, Q=0.707)
         
-        # 6. HIỆU CHỈNH ÂM LƯỢNG TỔNG THỂ (GLOBAL GAIN)
-        wav = F.gain(wav, gain_db=1.1)
-
         torchaudio.save(output_file, wav, 24000)
 
         generate_end_time = time.time()  # Record the time to generate TTS
@@ -714,8 +650,6 @@ class TTSWrapper:
             else:
                 # Only a filename was provided; prepend with output folder.
                 output_file = os.path.join(self.output_folder, file_name_or_path)
-
-
 
             # Check if 'text' is a valid path to a '.txt' file.
             if os.path.isfile(text) and text.lower().endswith('.txt'):

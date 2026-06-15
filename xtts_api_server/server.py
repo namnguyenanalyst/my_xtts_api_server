@@ -76,6 +76,12 @@ LOWVRAM_MODE = os.getenv("LOWVRAM_MODE") == 'true'
 DEEPSPEED = os.getenv("DEEPSPEED") == 'true'
 USE_CACHE = os.getenv("USE_CACHE") == 'true'
 
+# AUDIO PROCESSING VARS
+ENABLE_DENOISING = os.getenv("ENABLE_DENOISING") == 'true'
+DENOISING_BACKEND = os.getenv("DENOISING_BACKEND", "demucs")
+OUTPUT_SAMPLE_RATE_48K = os.getenv("OUTPUT_SAMPLE_RATE_48K") == 'true'
+UP_SAMPLER_BACKEND = os.getenv("UP_SAMPLER_BACKEND", "dsp")
+
 # STREAMING VARS
 STREAM_MODE = os.getenv("STREAM_MODE") == 'true'
 STREAM_MODE_IMPROVE = os.getenv("STREAM_MODE_IMPROVE") == 'true'
@@ -86,7 +92,21 @@ if(DEEPSPEED):
 
 # Create an instance of the TTSWrapper class and server
 app = FastAPI()
-XTTS = TTSWrapper(OUTPUT_FOLDER,SPEAKER_FOLDER,MODEL_FOLDER,LOWVRAM_MODE,MODEL_SOURCE,MODEL_VERSION,DEVICE,DEEPSPEED,USE_CACHE)
+XTTS = TTSWrapper(
+    output_folder=OUTPUT_FOLDER,
+    speaker_folder=SPEAKER_FOLDER,
+    model_folder=MODEL_FOLDER,
+    lowvram=LOWVRAM_MODE,
+    model_source=MODEL_SOURCE,
+    model_version=MODEL_VERSION,
+    device=DEVICE,
+    deepspeed=DEEPSPEED,
+    enable_cache_results=USE_CACHE,
+    enable_denoising=ENABLE_DENOISING,
+    denoising_backend=DENOISING_BACKEND,
+    output_sample_rate_48k=OUTPUT_SAMPLE_RATE_48K,
+    up_sampler_backend=UP_SAMPLER_BACKEND
+)
 
 tts_queue = asyncio.Semaphore(1)
 queue_count = 0
@@ -400,7 +420,8 @@ async def tts_with_progress(
                 import torch
                 import torchaudio
                 final_wav = torch.cat(all_wavs, dim=1) 
-                torchaudio.save(output_file, final_wav, 24000)
+                out_sample_rate = 48000 if XTTS.output_sample_rate_48k else 24000
+                torchaudio.save(output_file, final_wav, out_sample_rate)
                 
                 filename = os.path.basename(output_file)
                 # Ensure the path returned matches how files are served
