@@ -82,7 +82,12 @@ official_model_list_v2 = ["2.0.0","2.0.1","2.0.2","2.0.3"]
 reversed_supported_languages = {name: code for code, name in supported_languages.items()}
 
 class TTSWrapper:
-    def __init__(self,output_folder = "./output", speaker_folder="./speakers",model_folder="xtts_models",lowvram = False,model_source = "local",model_version = "XTTS-v2-vietnamse",device = "cuda",deepspeed = False,enable_cache_results = True):
+    def __init__(self,output_folder = "./output", speaker_folder="./speakers",model_folder="xtts_models",lowvram = False,model_source = "local",model_version = "XTTS-v2-vietnamse",device = "cuda",deepspeed = False,enable_cache_results = True, enable_denoising = False, denoising_backend = "demucs", output_sample_rate_48k = False, up_sampler_backend = "dsp"):
+
+        self.enable_denoising = enable_denoising
+        self.denoising_backend = denoising_backend
+        self.output_sample_rate_48k = output_sample_rate_48k
+        self.up_sampler_backend = up_sampler_backend
 
         self.cuda = device # If the user has chosen what to use, we rewrite the value to the value we want to use
         self.device = 'cuda' if lowvram else (self.cuda if torch.cuda.is_available() else "cpu")
@@ -133,7 +138,9 @@ class TTSWrapper:
         return [name for name in entries if os.path.isdir(os.path.join(self.model_folder, name))]
         
 
-    def get_wav_header(self, channels:int=1, sample_rate:int=24000, width:int=2) -> bytes:
+    def get_wav_header(self, channels:int=1, sample_rate:int=None, width:int=2) -> bytes:
+        if sample_rate is None:
+            sample_rate = 48000 if self.output_sample_rate_48k else 24000
         wav_buf = io.BytesIO()
         with wave.open(wav_buf, "wb") as out:
             out.setnchannels(channels)
@@ -273,12 +280,86 @@ class TTSWrapper:
                 torch.cuda.empty_cache()
 
     # SPEAKER FUNCS
+    def clean_audio(self, input_path, output_path):
+        """Denoise and dereverb audio using the selected backend"""
+        try:
+            if self.denoising_backend == "demucs":
+                self.clean_audio_demucs(input_path, output_path)
+            elif self.denoising_backend == "noisereduce":
+                self.clean_audio_noisereduce(input_path, output_path)
+            else:
+                import shutil
+                shutil.copyfile(input_path, output_path)
+        except Exception as e:
+            logger.error(f"Denoising failed: {e}. Falling back to copying original audio.")
+            import shutil
+            shutil.copyfile(input_path, output_path)
+
+    def clean_audio_demucs(self, input_path, output_path):
+        if not hasattr(self, "_demucs_model") or self._demucs_model is None:
+            logger.info("Initializing Facebook Demucs Denoising model...")
+            import denoiser.pretrained as pretrained
+            self._demucs_model = pretrained.dns64().to(self.device)
+            self._demucs_model.eval()
+            
+        import torchaudio
+        import torch
+        
+        wav, sr = torchaudio.load(input_path)
+        if sr != self._demucs_model.sample_rate:
+            resampler = torchaudio.transforms.Resample(orig_freq=sr, new_freq=self._demucs_model.sample_rate).to(self.device)
+            wav_model = resampler(wav.to(self.device))
+        else:
+            wav_model = wav.to(self.device)
+            
+        if wav_model.dim() == 2:
+            wav_model = wav_model.unsqueeze(0)
+            
+        with torch.no_grad():
+            denoised = self._demucs_model(wav_model)
+            
+        denoised = denoised.squeeze(0).cpu()
+        target_sr = 24000
+        if self._demucs_model.sample_rate != target_sr:
+            resampler_back = torchaudio.transforms.Resample(orig_freq=self._demucs_model.sample_rate, new_freq=target_sr)
+            wav_out = resampler_back(denoised)
+        else:
+            wav_out = denoised
+            
+        torchaudio.save(output_path, wav_out, target_sr)
+        logger.info(f"Demucs denoised audio saved to {output_path}")
+
+    def clean_audio_noisereduce(self, input_path, output_path):
+        import torchaudio
+        import noisereduce as nr
+        import torch
+        
+        wav, sr = torchaudio.load(input_path)
+        wav_np = wav.squeeze().numpy()
+        reduced = nr.reduce_noise(y=wav_np, sr=sr)
+        wav_out = torch.tensor(reduced).unsqueeze(0)
+        
+        target_sr = 24000
+        if sr != target_sr:
+            resampler = torchaudio.transforms.Resample(orig_freq=sr, new_freq=target_sr)
+            wav_out = resampler(wav_out)
+            
+        torchaudio.save(output_path, wav_out, target_sr)
+        logger.info(f"noisereduce denoised audio saved to {output_path}")
+
     def preprocess_speaker_audio(self, input_path, output_path=None):
         """Trims silence and normalizes audio volume using librosa"""
         if output_path is None:
             output_path = input_path
         
         try:
+            # Denoise first if enabled
+            temp_cleaned_path = None
+            if self.enable_denoising:
+                temp_cleaned_path = output_path + ".denoised.tmp.wav"
+                self.clean_audio(input_path, temp_cleaned_path)
+                input_path = temp_cleaned_path
+            
             # Load audio (downsample/upsample to 24000Hz, mono)
             y, sr = librosa.load(input_path, sr=24000, mono=True)
             
@@ -292,6 +373,14 @@ class TTSWrapper:
                 
             # Write back to file as WAV
             sf.write(output_path, yt, sr)
+            
+            # Cleanup temp denoised file
+            if temp_cleaned_path and os.path.exists(temp_cleaned_path):
+                try:
+                    os.remove(temp_cleaned_path)
+                except Exception:
+                    pass
+                
             logger.info(f"Successfully preprocessed and normalized speaker audio: {output_path}")
             return output_path
         except Exception as e:
@@ -301,12 +390,45 @@ class TTSWrapper:
     def get_or_create_latents(self, speaker_name, speaker_wav):
         if speaker_name not in self.latents_cache:
             logger.info(f"creating latents for {speaker_name}: {speaker_wav}")
-            gpt_cond_latent, speaker_embedding = self.model.get_conditioning_latents(
-                audio_path=speaker_wav,
-                max_ref_length=60,
-                gpt_cond_len=30
-                )
-            self.latents_cache[speaker_name] = (gpt_cond_latent, speaker_embedding)
+            
+            temp_files_to_cleanup = []
+            if self.enable_denoising:
+                temp_dir = os.path.join(self.output_folder, "temp_cleaned_speakers")
+                os.makedirs(temp_dir, exist_ok=True)
+                from uuid import uuid4
+                
+                if isinstance(speaker_wav, list):
+                    cleaned_wavs = []
+                    for idx, wav_path in enumerate(speaker_wav):
+                        temp_clean_path = os.path.join(temp_dir, f"clean_{uuid4()}_{idx}.wav")
+                        self.preprocess_speaker_audio(wav_path, temp_clean_path)
+                        cleaned_wavs.append(temp_clean_path)
+                        temp_files_to_cleanup.append(temp_clean_path)
+                    speaker_wav_for_latent = cleaned_wavs
+                else:
+                    temp_clean_path = os.path.join(temp_dir, f"clean_{uuid4()}.wav")
+                    self.preprocess_speaker_audio(speaker_wav, temp_clean_path)
+                    speaker_wav_for_latent = temp_clean_path
+                    temp_files_to_cleanup.append(temp_clean_path)
+            else:
+                speaker_wav_for_latent = speaker_wav
+
+            try:
+                gpt_cond_latent, speaker_embedding = self.model.get_conditioning_latents(
+                    audio_path=speaker_wav_for_latent,
+                    max_ref_length=60,
+                    gpt_cond_len=30
+                    )
+                self.latents_cache[speaker_name] = (gpt_cond_latent, speaker_embedding)
+            finally:
+                # Cleanup temporary files
+                for temp_file in temp_files_to_cleanup:
+                    if os.path.exists(temp_file):
+                        try:
+                            os.remove(temp_file)
+                        except Exception as e:
+                            logger.error(f"Failed to remove temp cleaned speaker file {temp_file}: {e}")
+                            
         return self.latents_cache[speaker_name]
 
     def create_latents_for_all(self):
@@ -540,8 +662,16 @@ class TTSWrapper:
             yield chunk.tobytes()
 
         if len(file_chunks) > 0:
-            wav = torch.cat(file_chunks, dim=0)
-            torchaudio.save(output_file, wav.cpu().squeeze().unsqueeze(0), 24000)
+            wav = torch.cat(file_chunks, dim=0).cpu().squeeze().unsqueeze(0)
+            import torchaudio.functional as F
+            # 6. HIỆU CHỈNH ÂM LƯỢNG TỔNG THỂ (GLOBAL GAIN)
+            wav = F.gain(wav, gain_db=1.1)
+
+            if self.output_sample_rate_48k:
+                wav = self.upsample_wav(wav, orig_sr=24000)
+                torchaudio.save(output_file, wav, 48000)
+            else:
+                torchaudio.save(output_file, wav, 24000)
         else:
             logger.warning("No audio generated.")
 
@@ -580,7 +710,60 @@ class TTSWrapper:
         # 5. Treble — giữ nguyên hoặc boost nhẹ
         wav = F.treble_biquad(wav, sample_rate=24000, gain=2.0, central_freq=5000.0, Q=0.707)
         
+        if self.output_sample_rate_48k:
+            wav = self.upsample_wav(wav, orig_sr=24000)
+            
         return wav
+
+    def upsample_wav(self, wav_tensor, orig_sr=24000):
+        """Upsample wave tensor to 48kHz using the selected backend"""
+        if not self.output_sample_rate_48k:
+            return wav_tensor
+            
+        try:
+            target_sr = 48000
+            if self.up_sampler_backend == "dsp":
+                import torchaudio
+                resampler = torchaudio.transforms.Resample(
+                    orig_freq=orig_sr,
+                    new_freq=target_sr,
+                    lowpass_filter_width=64,
+                    rolloff=0.94759,
+                    resampling_method="sinc_interp_kaiser"
+                ).to(wav_tensor.device)
+                return resampler(wav_tensor)
+            elif self.up_sampler_backend == "audiosr":
+                return self.upsample_wav_audiosr(wav_tensor, orig_sr)
+            else:
+                return wav_tensor
+        except Exception as e:
+            logger.error(f"Upsampling failed: {e}. Returning original audio.")
+            return wav_tensor
+
+    def upsample_wav_audiosr(self, wav_tensor, orig_sr):
+        if not hasattr(self, "_audiosr_model") or self._audiosr_model is None:
+            logger.info("Initializing AudioSR model...")
+            from audiosr import build_model
+            self._audiosr_model = build_model(device=self.device)
+            
+        from audiosr import super_resolution
+        import torch
+        
+        wav_np = wav_tensor.squeeze().cpu().numpy()
+        try:
+            out_wav = super_resolution(self._audiosr_model, wav_np, seed=42, guidance_scale=3.5, num_inference_steps=20)
+            return torch.tensor(out_wav).unsqueeze(0).to(wav_tensor.device)
+        except Exception as e:
+            logger.error(f"AudioSR super-resolution failed: {e}. Falling back to DSP upsampling.")
+            import torchaudio
+            resampler = torchaudio.transforms.Resample(
+                orig_freq=orig_sr,
+                new_freq=48000,
+                lowpass_filter_width=64,
+                rolloff=0.94759,
+                resampling_method="sinc_interp_kaiser"
+            ).to(wav_tensor.device)
+            return resampler(wav_tensor)
 
     def local_generation(self,text,speaker_name,speaker_wav,language,output_file):
         # Log time
@@ -648,7 +831,14 @@ class TTSWrapper:
         # 5. Treble
         wav = F.treble_biquad(wav, sample_rate=24000, gain=2.0, central_freq=5000.0, Q=0.707)
         
-        # # --- RESAMPLE TO 44100Hz AND SAVE AS MP3 128kbps ---
+        # 6. HIỆU CHỈNH ÂM LƯỢNG TỔNG THỂ (GLOBAL GAIN)
+        wav = F.gain(wav, gain_db=1.1)
+
+        if self.output_sample_rate_48k:
+            wav = self.upsample_wav(wav, orig_sr=24000)
+            torchaudio.save(output_file, wav, 48000)
+        else:
+            torchaudio.save(output_file, wav, 24000)
         # import torchaudio.transforms as T
         # resampler = T.Resample(orig_freq=24000, new_freq=44100)
         # wav_44k = resampler(wav)
