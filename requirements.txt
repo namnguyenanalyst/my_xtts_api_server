@@ -22,3 +22,8 @@ python-multipart
 langdetect
 deepspeed
 torchcodec
+noisereduce
+denoiser
+progressbar2
+unidecode
+audiosr
